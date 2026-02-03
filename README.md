@@ -1,0 +1,1 @@
+Python tools for automated validation between ClickUp tasks and CRM systems (OneSignal, Customer.io). Designed to prevent localization errors and speed up QA processes.
