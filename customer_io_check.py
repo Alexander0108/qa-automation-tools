@@ -1,8 +1,7 @@
 import pyperclip
 import re
 
-def auto_discovery_checker_v2():
-    # 1. Завантажуємо дані
+def auto_discovery_checker_v6():
     print("📋 КРОК 1: Скопіюй таблицю з ClickUp")
     input("Натисни Enter...")
     clickup_data = pyperclip.paste()
@@ -11,46 +10,78 @@ def auto_discovery_checker_v2():
     input("Натисни Enter...")
     cio_html = pyperclip.paste()
 
-    print(f"\n{'='*60}\n🎯 АВТОМАТИЧНИЙ ЗВІТ (ЗНАЙДЕНО В CLICKUP)\n{'='*60}")
+    def clean_text(text):
+        if not text: return ""
+        return " ".join(text.replace('&nbsp;', ' ').replace('\xa0', ' ').split())
+
+    cio_clean = clean_text(cio_html)
+
+    # Парсинг секцій
+    lines = clickup_data.strip().split('\n')
+    sections = []
+    current_element = None
     
-    # Очищуємо HTML для порівняння
-    cio_clean = " ".join(cio_html.split())
+    for line in lines:
+        line = line.strip()
+        if not line or line in ["ELEMENT", "CONTENT"]: continue
+        if not line.startswith('{%') and len(line) < 40:
+            current_element = line
+        elif current_element:
+            sections.append((current_element, line))
+            current_element = None
 
-    # Покращений пошук: 
-    # ([^\n|]+) - шукаємо назву (будь-які символи, крім переносу або роздільника таблиці)
-    # \s* - будь-яка кількість пробілів/табуляцій
-    # (\{% case customer\.language %\}.*?\{% endcase %\}) - сам блок Liquid
-    find_sections_pattern = r"([A-Z][A-Za-z\s]+)[\s|]+(\{% case customer\.language %\}.*?\{% endcase %\})"
-    
-    all_found = re.findall(find_sections_pattern, clickup_data, re.DOTALL)
+    # ВИТЯГУЄМО ЕТАЛОННИЙ СПИСОК МОВ (з першого знайденого Liquid-блоку)
+    reference_langs = []
+    for _, content in sections:
+        found_langs = re.findall(r'{% when "([a-z]{2})" %}', content)
+        if found_langs:
+            reference_langs = sorted(found_langs)
+            break
 
-    if not all_found:
-        print("❌ Не вдалося розпізнати структуру таблиці.")
-        print("💡 Порада: Переконайся, що при копіюванні захоплено і назву (напр. Button), і сам код.")
-        return
+    print(f"\n{'='*60}\n🎯 СУВОРИЙ ЗВІТ (Еталон: {', '.join(reference_langs).upper()})\n{'='*60}")
 
-    seen_content = set()
-
-    for section_name, liquid_block in all_found:
-        # Чистимо назву від зайвих пробілів та залишків таблиці
-        clean_name = section_name.strip().split('\n')[-1].strip()
+    for name, content in sections:
+        name_low = name.upper()
+        print(f"\n🔍 {name_low}:")
         
-        # Унікальність за контентом
-        content_hash = hash(liquid_block)
-        if content_hash in seen_content:
-            continue
-            
-        expected_liquid = " ".join(liquid_block.split())
-        
-        print(f"🔍 ПЕРЕВІРКА: {clean_name}")
-        
-        if expected_liquid in cio_clean:
-            print(f"   ✅ СТАТУС: Ідеально співпадає!")
+        # Витягуємо мови з поточного блоку
+        current_langs = re.findall(r'{% when "([a-z]{2})" %}', content)
+        sorted_current = sorted(current_langs)
+
+        # 1. ПЕРЕВІРКА СКЛАДУ МОВ (для всіх Liquid блоків)
+        if current_langs:
+            if sorted_current != reference_langs:
+                missing = set(reference_langs) - set(sorted_current)
+                extra = set(sorted_current) - set(reference_langs)
+                print(f"   ❌ ПОМИЛКА МОВНОГО СКЛАДУ!")
+                if missing: print(f"      - Відсутні мови: {list(missing)}")
+                if extra:   print(f"      - Зайві/невірні мови: {list(extra)}")
+            else:
+                print(f"   ✅ Склад мов ідентичний еталону.")
+
+        # 2. ПЕРЕВІРКА КОНТЕНТУ
+        if "SUBJECT" in name_low or "PREHE" in name_low:
+            # Для сабджектів перевіряємо лише наявність в ClickUp (вже перевірено вище)
+            print(f"   ℹ️  Дані в ClickUp валідні.")
         else:
-            print(f"   ❌ СТАТУС: ПОМИЛКА! Не знайдено в CIO.")
-            # Виведемо шматочок того, що шукаємо, для візуальної перевірки
-            print(f"      Шукав: {expected_liquid[:60]}...")
-        
-        seen_content.add(content_hash)
+            # Для HTML блоків перевіряємо фізичну наявність в коді CIO
+            clean_content = clean_text(content)
+            if clean_content in cio_clean:
+                print(f"   ✅ СТАТУС: Повний збіг у HTML!")
+            else:
+                if "{% when" in content:
+                    print(f"   ⚠️ СТАТУС: Помилка в HTML! Деталі по мовах:")
+                    languages = re.findall(r'({% when "([a-z]{2})" %}.*?)(?={% when|{% else|{% endcase)', content)
+                    for full_match, lang_code in languages:
+                        if clean_text(full_match) in cio_clean:
+                            print(f"      [{lang_code.upper()}]: ✅ OK")
+                        else:
+                            print(f"      [{lang_code.upper()}]: ❌ НЕ ЗНАЙДЕНО В HTML")
+                else:
+                    # Для статичного тексту (наприклад, промокод)
+                    if clean_content in cio_clean:
+                        print(f"   ✅ СТАТУС: Знайдено в HTML!")
+                    else:
+                        print(f"   ❌ СТАТУС: Не знайдено в HTML!")
 
-auto_discovery_checker_v2()
+auto_discovery_checker_v6()
