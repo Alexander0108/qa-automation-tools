@@ -1,36 +1,65 @@
 import pyperclip
 import re
 
+HEADER_ELEMENT = "ELEMENT"
+HEADER_CONTENT = "CONTENT"
+MAX_ELEMENT_NAME_LEN = 40
+
+
+def clean_text(text):
+    if not text:
+        return ""
+    return " ".join(text.replace("&nbsp;", " ").replace("\xa0", " ").split())
+
+
+def parse_clickup_sections(clickup_data: str) -> list[tuple[str, str]]:
+    """Парсить таблицю ClickUp: пари (назва елемента, контент). Контент може бути багаторядковим."""
+    lines = clickup_data.strip().split("\n")
+    sections = []
+    current_element = None
+    current_content_lines = []
+
+    def flush():
+        nonlocal current_element, current_content_lines
+        if current_element and current_content_lines:
+            sections.append((current_element, "\n".join(current_content_lines)))
+        current_content_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped in (HEADER_ELEMENT, HEADER_CONTENT):
+            continue
+        # Новий елемент: короткий рядок без Liquid
+        if not stripped.startswith("{%") and len(stripped) < MAX_ELEMENT_NAME_LEN:
+            flush()
+            current_element = stripped
+        elif current_element:
+            current_content_lines.append(stripped)
+
+    flush()
+    return sections
+
+
 def auto_discovery_checker_v6():
     print("📋 КРОК 1: Скопіюй таблицю з ClickUp")
     input("Натисни Enter...")
-    clickup_data = pyperclip.paste()
+    clickup_data = pyperclip.paste().strip()
+    if not clickup_data:
+        print("❌ Буфер порожній. Скопіюй таблицю з ClickUp і запусти знову.")
+        return
 
     print("\n📲 КРОК 2: Скопіюй HTML-код з Customer.io")
     input("Натисни Enter...")
-    cio_html = pyperclip.paste()
-
-    def clean_text(text):
-        if not text: return ""
-        return " ".join(text.replace('&nbsp;', ' ').replace('\xa0', ' ').split())
+    cio_html = pyperclip.paste().strip()
+    if not cio_html:
+        print("❌ Нічого не знайдено в буфері. Скопіюй HTML або результат grabber.")
+        return
 
     cio_clean = clean_text(cio_html)
 
-    # Парсинг секцій
-    lines = clickup_data.strip().split('\n')
-    sections = []
-    current_element = None
-    
-    for line in lines:
-        line = line.strip()
-        if not line or line in ["ELEMENT", "CONTENT"]: continue
-        if not line.startswith('{%') and len(line) < 40:
-            current_element = line
-        elif current_element:
-            sections.append((current_element, line))
-            current_element = None
+    sections = parse_clickup_sections(clickup_data)
 
-    # ВИТЯГУЄМО ЕТАЛОННИЙ СПИСОК МОВ (з першого знайденого Liquid-блоку)
+    # Еталонний список мов з першого Liquid-блоку
     reference_langs = []
     for _, content in sections:
         found_langs = re.findall(r'{% when "([a-z]{2})" %}', content)
@@ -38,50 +67,66 @@ def auto_discovery_checker_v6():
             reference_langs = sorted(found_langs)
             break
 
-    print(f"\n{'='*60}\n🎯 СУВОРИЙ ЗВІТ (Еталон: {', '.join(reference_langs).upper()})\n{'='*60}")
+    ref_label = ", ".join(reference_langs).upper() if reference_langs else "(немає Liquid-блоків)"
+    print(f"\n{'='*60}\n🎯 СУВОРИЙ ЗВІТ (Еталон мов: {ref_label})\n{'='*60}")
+
+    ok_count = 0
+    fail_count = 0
+    liquid_block_re = re.compile(
+        r'({% when "([a-z]{2})" %}.*?)(?={% when|{% else|{% endcase)',
+        re.DOTALL,
+    )
 
     for name, content in sections:
         name_low = name.upper()
         print(f"\n🔍 {name_low}:")
-        
-        # Витягуємо мови з поточного блоку
+
         current_langs = re.findall(r'{% when "([a-z]{2})" %}', content)
         sorted_current = sorted(current_langs)
 
-        # 1. ПЕРЕВІРКА СКЛАДУ МОВ (для всіх Liquid блоків)
+        # 1. Перевірка складу мов (Liquid-блоки)
         if current_langs:
             if sorted_current != reference_langs:
+                fail_count += 1
                 missing = set(reference_langs) - set(sorted_current)
                 extra = set(sorted_current) - set(reference_langs)
                 print(f"   ❌ ПОМИЛКА МОВНОГО СКЛАДУ!")
-                if missing: print(f"      - Відсутні мови: {list(missing)}")
-                if extra:   print(f"      - Зайві/невірні мови: {list(extra)}")
+                if missing:
+                    print(f"      - Відсутні мови: {list(missing)}")
+                if extra:
+                    print(f"      - Зайві/невірні мови: {list(extra)}")
             else:
                 print(f"   ✅ Склад мов ідентичний еталону.")
 
-        # 2. ПЕРЕВІРКА КОНТЕНТУ
+        # 2. Перевірка наявності контенту в HTML CIO
         if "SUBJECT" in name_low or "PREHE" in name_low:
-            # Для сабджектів перевіряємо лише наявність в ClickUp (вже перевірено вище)
             print(f"   ℹ️  Дані в ClickUp валідні.")
+            ok_count += 1
         else:
-            # Для HTML блоків перевіряємо фізичну наявність в коді CIO
             clean_content = clean_text(content)
             if clean_content in cio_clean:
                 print(f"   ✅ СТАТУС: Повний збіг у HTML!")
+                ok_count += 1
             else:
                 if "{% when" in content:
                     print(f"   ⚠️ СТАТУС: Помилка в HTML! Деталі по мовах:")
-                    languages = re.findall(r'({% when "([a-z]{2})" %}.*?)(?={% when|{% else|{% endcase)', content)
-                    for full_match, lang_code in languages:
+                    lang_ok = 0
+                    for full_match, lang_code in liquid_block_re.findall(content):
                         if clean_text(full_match) in cio_clean:
                             print(f"      [{lang_code.upper()}]: ✅ OK")
+                            lang_ok += 1
                         else:
                             print(f"      [{lang_code.upper()}]: ❌ НЕ ЗНАЙДЕНО В HTML")
-                else:
-                    # Для статичного тексту (наприклад, промокод)
-                    if clean_content in cio_clean:
-                        print(f"   ✅ СТАТУС: Знайдено в HTML!")
+                    if lang_ok == len(current_langs):
+                        ok_count += 1
                     else:
-                        print(f"   ❌ СТАТУС: Не знайдено в HTML!")
+                        fail_count += 1
+                else:
+                    print(f"   ❌ СТАТУС: Не знайдено в HTML!")
+                    fail_count += 1
 
-auto_discovery_checker_v6()
+    print(f"\n{'='*60}\n📊 Підсумок: ✅ {ok_count} | ❌ {fail_count}\n{'='*60}")
+
+
+if __name__ == "__main__":
+    auto_discovery_checker_v6()
