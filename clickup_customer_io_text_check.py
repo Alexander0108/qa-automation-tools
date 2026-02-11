@@ -26,7 +26,7 @@ def clean_content(text: str) -> str:
     return "\n".join(cleaned)
 
 def ai_validator(tz_text: str, copy_text: str) -> str:
-    """ШІ-двигун v20.5: Cross-language Localization & HTML Integrity."""
+    """ШІ-двигун v20.7: Cross-language Localization & HTML Integrity."""
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         return "❌ ERROR: OPENAI_API_KEY not found in .env file!"
@@ -83,7 +83,7 @@ def ai_validator(tz_text: str, copy_text: str) -> str:
 
 def main():
     print("=" * 60)
-    print(f"🚀 RP QA VALIDATOR v20.5 | Active Model: {MODEL_NAME}")
+    print(f"🚀 RP QA VALIDATOR v20.7 | Active Model: {MODEL_NAME}")
     print("=" * 60)
 
     # Step 1: Technical Requirements

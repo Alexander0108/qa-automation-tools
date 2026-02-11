@@ -4,14 +4,12 @@ A professional toolkit for iGaming marketing operations to validate multilingual
 
 ## 1. Tools Overview
 
-### 🤖 AI Text & Localization Validator (clickup_customer_io_text_check.py) — v20.6
+### 🤖 AI Text & Localization Validator (clickup_customer_io_text_check.py) — v20.7
 * **Engine:** OpenAI Multi-model support (GPT-5-mini / GPT-4o).
-* **Function:** Intelligent audit of copywriter work vs Technical Requirements.
-* **Advanced Features (New):**
-    * **Source of Truth (EN):** Automatically uses the English localization (`{% when "en" %}`) as the master reference to cross-check all 8+ other languages (DE, ES, FR, IT, etc.) for data consistency.
-    * **Smart HTML Validation:** Strict monitoring of `<strong>` and `<span>` tag placement to prevent layout breakage in CRM templates.
-    * **iGaming Snippet Check:** Ensures critical data (Min.dep, Wager, Max.win) uses correct system snippets (e.g., `{{snippets['10_EUR']}}`) instead of plain text.
-    * **Urgency Audit:** Validates if Preheaders meet the "urgency/scarcity" requirements from ClickUp.
+* **Smart Logic:** Distinguishes between critical errors (snippets, promo codes, HTML tags) and stylistic variations.
+* **Localization:** Cross-checks 8+ languages against the English "Source of Truth" for data consistency.
+* **Validation:** Technical snippet integrity, Liquid syntax, and urgency requirements.
+
 
 ### Customer.io HTML Integrity Checker (customer_io_check.py)
 * **Function:** Technical validation of HTML source code vs ClickUp data.
